@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Register</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="register-container">
+    <form id="registerForm" class="form">
+      <h2>Create Account</h2>
+
+      <div class="input-group">
+        <input type="text" id="firstName" placeholder="First Name" required />
+        <input type="text" id="lastName" placeholder="Last Name" required />
+      </div>
+
+      <div class="input-inline-group">
+        <input type="email" id="email" placeholder="Email Address" required />
+        <button type="button" id="sendOtpBtn">Send OTP</button>
+      </div>
+
+      <div id="otpSection" class="hidden">
+        <input type="text" id="otp" placeholder="Enter OTP" required />
+        <button type="button" id="verifyOtpBtn">Verify OTP</button>
+      </div>
+
+      <input type="password" id="password" placeholder="Password" required />
+      <input type="password" id="confirmPassword" placeholder="Confirm Password" required />
+
+      <button type="submit">Register</button>
+
+      <p id="message" class="message"></p>
+    </form>
+  </div>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const sendOtpBtn = document.getElementById('sendOtpBtn');
+    const otpSection = document.getElementById('otpSection');
+    const message = document.getElementById('message');
+    const form = document.getElementById('registerForm');
+
+    // Send OTP handler
+    sendOtpBtn.addEventListener('click', async () => {
+      const email = document.getElementById('email').value;
+      const firstName = document.getElementById('firstName').value || '';
+      const lastName = document.getElementById('lastName').value || '';
+
+      if (!email) {
+        message.textContent = '⚠️ Please enter an email address.';
+        return;
+      }
+
+      try {
+        const res = await fetch('http://localhost:5000/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, firstName, lastName })
+        });
+        const data = await res.json();
+        message.textContent = data.message;
+        if (res.ok) {
+          otpSection.classList.remove('hidden');
+        }
+      } catch (err) {
+        message.textContent = '❌ Failed to send OTP.';
+      }
+    });
+
+    // Register form submit handler
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const confirmPassword = document.getElementById('confirmPassword').value;
+      const firstName = document.getElementById('firstName').value;
+      const lastName = document.getElementById('lastName').value;
+      const userOtp = document.getElementById('otp').value;
+
+      if (!email || !password || !userOtp) {
+        message.textContent = '⚠️ Please fill in all required fields including OTP.';
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        message.textContent = '❌ Passwords do not match.';
+        return;
+      }
+
+      try {
+        const res = await fetch('http://localhost:5000/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email,
+            firstName,
+            lastName,
+            password,
+            otp: parseInt(userOtp, 10)
+          })
+        });
+        const data = await res.json();
+        message.textContent = data.message;
+
+        if (res.ok) {
+          message.textContent = '✅ Registered successfully! Redirecting to login...';
+          setTimeout(() => {
+            window.location.href = 'login.html';
+          }, 2000); // wait 2 seconds then redirect
+        }
+      } catch (err) {
+        message.textContent = '❌ Registration failed.';
+      }
+    });
+  });
+</script>
+
+</body>
+</html>

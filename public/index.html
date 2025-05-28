@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Telegram-like Chat UI</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="http://localhost:5000/socket.io/socket.io.js"></script>
+<script>
+    let selectedUserId = null;
+    let currentUserId = null; 
+
+    const socket = io('http://localhost:5000', { withCredentials: true });
+
+    socket.on('connect', () => {
+        console.log('Connected to Socket.IO');
+    });
+    
+    // When a user clicks on a message
+    socket.on('receive_message', (msg) => {
+    console.log("📩 Real-time message received:", msg); // TEMP DEBUG
+
+    // Make sure selected chat is with the sender
+    if (selectedUserId === msg.senderId) {
+        const chatMessages = document.getElementById('chatMessages');
+        const messageEl = document.createElement('div');
+        messageEl.classList.add('message', 'received');
+        messageEl.innerHTML = `
+            <div class="message-content">${msg.text}</div>
+            <div class="message-time">${msg.time}</div>
+        `;
+        chatMessages.appendChild(messageEl);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+});
+
+
+
+    window.addEventListener('DOMContentLoaded', async () => {
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            try {
+                const res = await fetch('http://localhost:5000/api/auth/logout', {
+                    method: 'POST',
+                    credentials: 'include',
+                });
+
+                if (res.ok) {
+                    window.location.href = 'login.html';
+                } else {
+                    alert('Logout failed!');
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
+                alert('An error occurred while logging out.');
+            }
+        });
+
+        try {
+            const res = await fetch('http://localhost:5000/api/auth/auth-check', {
+                method: 'GET',
+                credentials: 'include',
+            });
+
+            if (!res.ok) {
+                window.location.href = 'login.html';
+            } else {
+                loadChatUsers();
+            }
+        } catch (error) {
+            console.error('Auth check failed:', error);
+            window.location.href = 'login.html';
+        }
+
+        document.getElementById('sendBtn').addEventListener('click', async () => {
+            const messageInput = document.getElementById('messageInput');
+            const messageText = messageInput.value.trim();
+
+            if (!selectedUserId || !messageText) return;
+
+            try {
+                const res = await fetch(`http://localhost:5000/api/auth/chat_user/${selectedUserId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({ message: messageText })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    const chatMessages = document.getElementById('chatMessages');
+                    const messageEl = document.createElement('div');
+                    messageEl.classList.add('message', 'sent');
+                    messageEl.innerHTML = `
+                        <div class="message-content">${messageText}</div>
+                        <div class="message-time">${data.data.time}</div>
+                    `;
+                    chatMessages.appendChild(messageEl);
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                    messageInput.value = '';
+                } else {
+                    alert('Failed to send message.');
+                }
+            } catch (error) {
+                console.error('Send message error:', error);
+                alert('An error occurred while sending the message.');
+            }
+        });
+    });
+
+
+    // Load chat users
+
+    async function loadChatUsers() {
+        try {
+            const response = await fetch('http://localhost:5000/api/auth/chat_user', {
+                credentials: 'include'
+            });
+            const data = await response.json();
+
+            const currentUser = data.currentUser;
+            currentUserId = currentUser.id; // Store for later use
+            socket.emit('register', currentUserId); // 🔥 Register socket after getting current user
+
+            const users = data.otherUsers || [];
+
+            const chatHeader = document.getElementById('chatHeader');
+            chatHeader.innerText = `Hello ${currentUser.firstName} ${currentUser.lastName}`;
+
+            const usersList = document.getElementById('usersList');
+            usersList.innerHTML = '';
+
+            if (!Array.isArray(users) || users.length === 0) {
+                usersList.innerHTML = `<div style="padding: 15px; color: #888;">No other users found</div>`;
+                return;
+            }
+
+            users.forEach(user => {
+                const fullName = `${user.firstName} ${user.lastName}`;
+                const initials = user.firstName[0] + (user.lastName[0] || '');
+
+                const userItem = document.createElement('div');
+                userItem.classList.add('user-item');
+                userItem.innerHTML = `
+                    <div class="user-avatar">${initials.toUpperCase()}</div>
+                    <div class="user-info">
+                        <div class="user-name">${fullName}</div>
+                        <div class="user-last-message">No messages yet</div>
+                    </div>
+                `;
+
+                userItem.addEventListener('click', async () => {
+                    selectedUserId = user.id;
+
+                    try {
+                        const chatRes = await fetch(`http://localhost:5000/api/auth/chat_user/${user.id}`, {
+                            credentials: 'include'
+                        });
+
+                        if (!chatRes.ok) throw new Error('Chat fetch failed');
+
+                        const chatData = await chatRes.json();
+                        const messages = chatData.messages || [];
+                        const receiver = chatData.receiverUser;
+
+                        const chatHeader = document.getElementById('chatHeader');
+                        chatHeader.innerText = `Chat with ${receiver.firstName}`;
+
+                        const chatMessages = document.getElementById('chatMessages');
+                        chatMessages.innerHTML = '';
+
+                        messages.forEach(msg => {
+                            const messageEl = document.createElement('div');
+                            messageEl.classList.add('message');
+                            messageEl.classList.add(msg.from === 'me' ? 'sent' : 'received');
+                            messageEl.innerHTML = `
+                                <div class="message-content">${msg.text}</div>
+                                <div class="message-time">${msg.time}</div>
+                            `;
+                            chatMessages.appendChild(messageEl);
+                        });
+
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                    } catch (err) {
+                        console.error('Error loading chat messages:', err);
+                        alert('Could not load messages.');
+                    }
+                });
+
+                usersList.appendChild(userItem);
+            });
+        } catch (err) {
+            console.error('Failed to fetch chat users:', err);
+        }
+    }
+</script>
+
+
+</head>
+
+<body>
+    <div class="chat-app">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span>Chats</span>
+                <button id="logoutBtn"
+                    style="float: right; background: #ff4d4d; border: none; color: white; padding: 5px 10px; border-radius: 5px; cursor: pointer;">
+                    Logout
+                </button>
+            </div>
+
+            <div class="search-box">
+                <input type="text" placeholder="Search users..." />
+            </div>
+
+            <div class="users-list" id="usersList"></div>
+        </aside>
+
+        <section class="chat-panel">
+            <header class="chat-header" id="chatHeader">Select a chat</header>
+            <div class="chat-messages" id="chatMessages"></div>
+            <div class="chat-input">
+                <textarea id="messageInput" placeholder="Type your message..."></textarea>
+                <button id="sendBtn">Send</button>
+            </div>
+        </section>
+    </div>
+</body>
+</html>
